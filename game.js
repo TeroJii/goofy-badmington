@@ -117,19 +117,19 @@ function drawStickFigure(x, y, facingRight) {
   const dir = facingRight ? 1 : -1;
 
   // — Legs —
+  const hipY = y - FIG.legLen;
   // Left leg
   ctx.beginPath();
-  ctx.moveTo(x, y);
-  ctx.lineTo(x - 10, y - FIG.legLen);
+  ctx.moveTo(x, hipY);
+  ctx.lineTo(x - 10, y);
   ctx.stroke();
   // Right leg
   ctx.beginPath();
-  ctx.moveTo(x, y);
-  ctx.lineTo(x + 10, y - FIG.legLen);
+  ctx.moveTo(x, hipY);
+  ctx.lineTo(x + 10, y);
   ctx.stroke();
 
   // — Body —
-  const hipY = y - FIG.legLen;
   const shoulderY = hipY - FIG.bodyLen;
   ctx.beginPath();
   ctx.moveTo(x, hipY);
