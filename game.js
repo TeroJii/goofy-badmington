@@ -1,7 +1,16 @@
 'use strict';
 
 const canvas = document.getElementById('gameCanvas');
+
+if (!(canvas instanceof HTMLCanvasElement)) {
+  throw new Error('Game initialization error: <canvas id="gameCanvas"> not found or not a canvas element.');
+}
+
 const ctx = canvas.getContext('2d');
+
+if (!ctx) {
+  throw new Error('Game initialization error: Failed to acquire 2D rendering context for gameCanvas.');
+}
 
 // ── Game dimensions ──────────────────────────────────────────────────────────
 const GAME_WIDTH = canvas.width;   // 800
@@ -50,34 +59,47 @@ document.addEventListener('keyup', (e) => {
 
 // ── Drawing helpers ──────────────────────────────────────────────────────────
 
-// Cache the sky gradient — created once to avoid allocation every frame
-const skyGradient = ctx.createLinearGradient(0, 0, 0, GROUND_Y);
-skyGradient.addColorStop(0, '#0f3460');
-skyGradient.addColorStop(1, '#16213e');
+// Pre-render the static background (court + net) to an offscreen canvas once,
+// then blit it each frame to avoid per-frame allocations and canvas API calls.
+const bgCanvas = document.createElement('canvas');
+bgCanvas.width = GAME_WIDTH;
+bgCanvas.height = GAME_HEIGHT;
+const bgCtx = bgCanvas.getContext('2d');
 
-function drawBackground() {
+if (!bgCtx) {
+  throw new Error('Game initialization error: Failed to acquire 2D rendering context for background canvas.');
+}
+
+(function initBackground() {
   // Sky gradient
-  ctx.fillStyle = skyGradient;
-  ctx.fillRect(0, 0, GAME_WIDTH, GROUND_Y);
+  const sky = bgCtx.createLinearGradient(0, 0, 0, GROUND_Y);
+  sky.addColorStop(0, '#0f3460');
+  sky.addColorStop(1, '#16213e');
+  bgCtx.fillStyle = sky;
+  bgCtx.fillRect(0, 0, GAME_WIDTH, GROUND_Y);
 
   // Ground strip
-  ctx.fillStyle = '#2a5c2a';
-  ctx.fillRect(0, GROUND_Y, GAME_WIDTH, GAME_HEIGHT - GROUND_Y);
+  bgCtx.fillStyle = '#2a5c2a';
+  bgCtx.fillRect(0, GROUND_Y, GAME_WIDTH, GAME_HEIGHT - GROUND_Y);
 
   // Net (centred, simple placeholder)
   const netX = GAME_WIDTH / 2;
-  ctx.strokeStyle = '#ffffff55';
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(netX, GROUND_Y);
-  ctx.lineTo(netX, GROUND_Y - 80);
-  ctx.stroke();
+  bgCtx.strokeStyle = '#ffffff55';
+  bgCtx.lineWidth = 2;
+  bgCtx.beginPath();
+  bgCtx.moveTo(netX, GROUND_Y);
+  bgCtx.lineTo(netX, GROUND_Y - 80);
+  bgCtx.stroke();
 
   // Net crossbar
-  ctx.beginPath();
-  ctx.moveTo(netX - 5, GROUND_Y - 80);
-  ctx.lineTo(netX + 5, GROUND_Y - 80);
-  ctx.stroke();
+  bgCtx.beginPath();
+  bgCtx.moveTo(netX - 5, GROUND_Y - 80);
+  bgCtx.lineTo(netX + 5, GROUND_Y - 80);
+  bgCtx.stroke();
+}());
+
+function drawBackground() {
+  ctx.drawImage(bgCanvas, 0, 0);
 }
 
 /**
