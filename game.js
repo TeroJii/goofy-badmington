@@ -17,7 +17,7 @@ const STICK_COLOR = '#e0e0e0';
 const player = {
   x: GAME_WIDTH / 2,  // horizontal centre of body / hips
   y: GROUND_Y,        // feet rest on the ground line
-  width: 30,          // rough bounding width (used for wall clamping)
+  width: 60,          // bounding width = 2 × arm length (used for wall clamping)
   facingRight: true,
 };
 
@@ -49,12 +49,15 @@ document.addEventListener('keyup', (e) => {
 });
 
 // ── Drawing helpers ──────────────────────────────────────────────────────────
+
+// Cache the sky gradient — created once to avoid allocation every frame
+const skyGradient = ctx.createLinearGradient(0, 0, 0, GROUND_Y);
+skyGradient.addColorStop(0, '#0f3460');
+skyGradient.addColorStop(1, '#16213e');
+
 function drawBackground() {
   // Sky gradient
-  const sky = ctx.createLinearGradient(0, 0, 0, GROUND_Y);
-  sky.addColorStop(0, '#0f3460');
-  sky.addColorStop(1, '#16213e');
-  ctx.fillStyle = sky;
+  ctx.fillStyle = skyGradient;
   ctx.fillRect(0, 0, GAME_WIDTH, GROUND_Y);
 
   // Ground strip
