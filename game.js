@@ -23,6 +23,12 @@ const GROUND_Y = GAME_HEIGHT - 60;
 const PLAYER_SPEED = 4;
 const STICK_COLOR = '#e0e0e0';
 
+// ── Bat settings ─────────────────────────────────────────────────────────────
+const BAT_COLOR = '#c8a26a';      // warm wood / frame colour
+const BAT_HANDLE_LEN = 28;        // pixels from hand to base of racket head
+const BAT_HEAD_RX = 9;            // semi-minor axis (width across head)
+const BAT_HEAD_RY = 14;           // semi-major axis (length along head)
+
 const player = {
   x: GAME_WIDTH / 4,  // start on the left-hand side of the court
   y: GROUND_Y,        // feet rest on the ground line
@@ -103,6 +109,56 @@ function drawBackground() {
 }
 
 /**
+ * Draw a static badminton bat held at a 45-degree angle.
+ * The grip of the bat starts at (handX, handY) and the head extends
+ * forward and upward at 45 degrees in the direction the player faces.
+ * @param {number} handX - x position of the hand (front arm tip)
+ * @param {number} handY - y position of the hand
+ * @param {boolean} facingRight - direction the player faces
+ */
+function drawBat(handX, handY, facingRight) {
+  const dir = facingRight ? 1 : -1;
+  const cos45 = Math.SQRT1_2; // cos(45°) = sin(45°) = 1/√2 ≈ 0.707
+
+  // Bat direction vector in canvas coords: forward (dir) and upward (-y) at 45 °
+  const bdx = dir * cos45;
+  const bdy = -cos45;
+
+  // End of handle (start of racket head)
+  const tipX = handX + bdx * BAT_HANDLE_LEN;
+  const tipY = handY + bdy * BAT_HANDLE_LEN;
+
+  // Centre of the elliptical racket head (one head-radius further along bat)
+  const headCX = handX + bdx * (BAT_HANDLE_LEN + BAT_HEAD_RY);
+  const headCY = handY + bdy * (BAT_HANDLE_LEN + BAT_HEAD_RY);
+
+  // Ellipse rotation: long axis (ry) must align with the bat direction.
+  // ctx.ellipse rotation r makes the ry axis point at direction (-sin r, cos r)
+  // in canvas coords. For facing right we need (-sin r, cos r) = (inv, -inv),
+  // which gives r = π/4. Mirror to -π/4 when facing left.
+  const headRot = dir * Math.PI / 4;
+
+  ctx.save();
+  ctx.strokeStyle = BAT_COLOR;
+  ctx.lineCap = 'round';
+
+  // Handle
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(handX, handY);
+  ctx.lineTo(tipX, tipY);
+  ctx.stroke();
+
+  // Racket head
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.ellipse(headCX, headCY, BAT_HEAD_RX, BAT_HEAD_RY, headRot, 0, Math.PI * 2);
+  ctx.stroke();
+
+  ctx.restore();
+}
+
+/**
  * Draw a simple stick figure with its feet at (x, y).
  * @param {number} x  - x position (feet / hip centre)
  * @param {number} y  - y position (feet on ground)
@@ -147,6 +203,9 @@ function drawStickFigure(x, y, facingRight) {
   ctx.moveTo(x, shoulderY);
   ctx.lineTo(x + dir * FIG.armLen, shoulderY - 10);
   ctx.stroke();
+
+  // Bat held in the front hand at 45 degrees
+  drawBat(x + dir * FIG.armLen, shoulderY - 10, facingRight);
 
   // — Head —
   const headCY = shoulderY - FIG.headR;
