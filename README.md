@@ -6,6 +6,8 @@ A browser-based 2D badminton game built with plain HTML, CSS, and JavaScript (HT
 
 👉 **[Play on GitHub Pages](https://terojii.github.io/goofy-badmington/)**
 
+**Note:** You need a keyboard for playing the game. Mobile devices are currently not supported.
+
 ## Controls
 
 | Key | Action |
