@@ -25,7 +25,7 @@ const STICK_COLOR = '#e0e0e0';
 
 // ── Bat settings ─────────────────────────────────────────────────────────────
 const BAT_COLOR = '#c8a26a';      // warm wood / frame colour
-const BAT_HANDLE_LEN = 28;        // pixels from hand to base of racket head
+const BAT_HANDLE_LEN = 28;        // pixels from hand to base of bat head
 const BAT_HEAD_RX = 9;            // semi-minor axis (width across head)
 const BAT_HEAD_RY = 14;           // semi-major axis (length along head)
 
@@ -45,7 +45,7 @@ const FIG = {
 
 const PLAYER_LEG_HALF_WIDTH = 10;
 const PLAYER_SIDE_REACH = Math.max(FIG.armLen, PLAYER_LEG_HALF_WIDTH, FIG.headR);
-// Horizontal half-width of the angled racket head when rotated 45 degrees.
+// Horizontal half-width of the angled bat head when rotated 45 degrees.
 const BAT_HEAD_HALF_WIDTH_AT_45 = Math.hypot(BAT_HEAD_RX, BAT_HEAD_RY) * Math.SQRT1_2;
 // Max horizontal reach from the body centre to the frontmost visible bat edge.
 const PLAYER_FRONT_REACH = FIG.armLen + Math.SQRT1_2 * (BAT_HANDLE_LEN + BAT_HEAD_RY) + BAT_HEAD_HALF_WIDTH_AT_45;
@@ -130,11 +130,11 @@ function drawBat(handX, handY, facingRight) {
   const bdx = dir * cos45;
   const bdy = -cos45;
 
-  // End of handle (start of racket head)
+  // End of handle (start of bat head)
   const tipX = handX + bdx * BAT_HANDLE_LEN;
   const tipY = handY + bdy * BAT_HANDLE_LEN;
 
-  // Centre of the elliptical racket head (one head-radius further along bat)
+  // Centre of the elliptical bat head (one head-radius further along bat)
   const headCX = handX + bdx * (BAT_HANDLE_LEN + BAT_HEAD_RY);
   const headCY = handY + bdy * (BAT_HANDLE_LEN + BAT_HEAD_RY);
 
@@ -155,7 +155,7 @@ function drawBat(handX, handY, facingRight) {
   ctx.lineTo(tipX, tipY);
   ctx.stroke();
 
-  // Racket head
+  // Bat head
   ctx.lineWidth = 2;
   ctx.beginPath();
   ctx.ellipse(headCX, headCY, BAT_HEAD_RX, BAT_HEAD_RY, headRot, 0, Math.PI * 2);
