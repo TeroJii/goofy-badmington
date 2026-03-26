@@ -24,7 +24,7 @@ const PLAYER_SPEED = 4;
 const STICK_COLOR = '#e0e0e0';
 
 const player = {
-  x: GAME_WIDTH / 2,  // horizontal centre of body / hips
+  x: GAME_WIDTH / 4,  // start on the left-hand side of the court
   y: GROUND_Y,        // feet rest on the ground line
   width: 60,          // bounding width = 2 × arm length (used for wall clamping)
   facingRight: true,
@@ -166,10 +166,10 @@ function update() {
     player.facingRight = true;
   }
 
-  // Keep player inside the canvas bounds
+  // Keep player on the left-hand side of the court (cannot cross the net)
   const halfW = player.width / 2;
   if (player.x < halfW) player.x = halfW;
-  if (player.x > GAME_WIDTH - halfW) player.x = GAME_WIDTH - halfW;
+  if (player.x > GAME_WIDTH / 2 - halfW) player.x = GAME_WIDTH / 2 - halfW;
 }
 
 // ── Render ───────────────────────────────────────────────────────────────────
