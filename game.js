@@ -32,7 +32,6 @@ const BAT_HEAD_RY = 14;           // semi-major axis (length along head)
 const player = {
   x: GAME_WIDTH / 4,  // start on the left-hand side of the court
   y: GROUND_Y,        // feet rest on the ground line
-  width: 60,          // bounding width = 2 × arm length (used for wall clamping)
   facingRight: true,
 };
 
@@ -43,6 +42,13 @@ const FIG = {
   headR: 12,
   armLen: 30,
 };
+
+const PLAYER_LEG_HALF_WIDTH = 10;
+const PLAYER_SIDE_REACH = Math.max(FIG.armLen, PLAYER_LEG_HALF_WIDTH, FIG.headR);
+// Horizontal half-width of the angled racket head when rotated 45 degrees.
+const BAT_HEAD_HALF_WIDTH_AT_45 = Math.hypot(BAT_HEAD_RX, BAT_HEAD_RY) * Math.SQRT1_2;
+// Max horizontal reach from the body centre to the frontmost visible bat edge.
+const PLAYER_FRONT_REACH = FIG.armLen + Math.SQRT1_2 * (BAT_HANDLE_LEN + BAT_HEAD_RY) + BAT_HEAD_HALF_WIDTH_AT_45;
 
 // ── Input state ──────────────────────────────────────────────────────────────
 const keys = {
@@ -226,9 +232,10 @@ function update() {
   }
 
   // Keep player on the left-hand side of the court (cannot cross the net)
-  const halfW = player.width / 2;
-  if (player.x < halfW) player.x = halfW;
-  if (player.x > GAME_WIDTH / 2 - halfW) player.x = GAME_WIDTH / 2 - halfW;
+  const minX = player.facingRight ? PLAYER_SIDE_REACH : PLAYER_FRONT_REACH;
+  const maxX = player.facingRight ? GAME_WIDTH / 2 - PLAYER_FRONT_REACH : GAME_WIDTH / 2 - PLAYER_SIDE_REACH;
+  if (player.x < minX) player.x = minX;
+  if (player.x > maxX) player.x = maxX;
 }
 
 // ── Render ───────────────────────────────────────────────────────────────────
