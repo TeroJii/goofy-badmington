@@ -134,7 +134,7 @@ function drawBat(handX, handY, facingRight) {
 
   // Ellipse rotation: long axis (ry) must align with the bat direction.
   // ctx.ellipse rotation r makes the ry axis point at direction (-sin r, cos r)
-  // in canvas coords. For facing right we need (-sin r, cos r) = (inv, -inv),
+  // in canvas coords. For facing right we need (-sin r, cos r) = (cos45, -cos45),
   // which gives r = π/4. Mirror to -π/4 when facing left.
   const headRot = dir * Math.PI / 4;
 
