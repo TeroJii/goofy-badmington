@@ -35,6 +35,12 @@ const player = {
   facingRight: true,
 };
 
+const player2 = {
+  x: (GAME_WIDTH * 3) / 4,  // start on the right-hand side of the court
+  y: GROUND_Y,               // feet rest on the ground line
+  facingRight: false,        // faces left (mirror of player 1)
+};
+
 // Stick-figure proportions (all relative to player.y == feet)
 const FIG = {
   legLen: 40,
@@ -50,10 +56,17 @@ const BAT_HEAD_HALF_WIDTH_AT_45 = Math.hypot(BAT_HEAD_RX, BAT_HEAD_RY) * Math.SQ
 // Max horizontal reach from the body centre to the frontmost visible bat edge.
 const PLAYER_FRONT_REACH = FIG.armLen + Math.SQRT1_2 * (BAT_HANDLE_LEN + BAT_HEAD_RY) + BAT_HEAD_HALF_WIDTH_AT_45;
 
+// ── Game mode & state ─────────────────────────────────────────────────────────
+/** @type {'1player' | '2player'} */
+let gameMode = '1player';
+let gameRunning = false;
+
 // ── Input state ──────────────────────────────────────────────────────────────
 const keys = {
   ArrowLeft: false,
   ArrowRight: false,
+  z: false,
+  c: false,
 };
 
 document.addEventListener('keydown', (e) => {
@@ -66,6 +79,39 @@ document.addEventListener('keydown', (e) => {
 document.addEventListener('keyup', (e) => {
   if (e.key in keys) {
     keys[e.key] = false;
+  }
+});
+
+// ── Button handlers ───────────────────────────────────────────────────────────
+const btn1Player = document.getElementById('btn-1player');
+const btn2Player = document.getElementById('btn-2player');
+const btnStart   = document.getElementById('btn-start');
+const controlsHint = document.getElementById('controls-hint');
+
+if (!(btn1Player instanceof HTMLButtonElement) ||
+    !(btn2Player instanceof HTMLButtonElement) ||
+    !(btnStart   instanceof HTMLButtonElement)) {
+  throw new Error('Game initialization error: Required button elements not found.');
+}
+
+btn1Player.addEventListener('click', () => {
+  gameMode = '1player';
+  btn1Player.classList.add('active');
+  btn2Player.classList.remove('active');
+  if (controlsHint) controlsHint.textContent = 'Use ← → arrow keys to move the player';
+});
+
+btn2Player.addEventListener('click', () => {
+  gameMode = '2player';
+  btn2Player.classList.add('active');
+  btn1Player.classList.remove('active');
+  if (controlsHint) controlsHint.textContent = 'Player 1: Z / C keys  |  Player 2: ← → arrow keys';
+});
+
+btnStart.addEventListener('click', () => {
+  if (!gameRunning) {
+    gameRunning = true;
+    requestAnimationFrame(gameLoop);
   }
 });
 
@@ -222,20 +268,52 @@ function drawStickFigure(x, y, facingRight) {
 
 // ── Update ───────────────────────────────────────────────────────────────────
 function update() {
-  if (keys.ArrowLeft) {
-    player.x -= PLAYER_SPEED;
-    player.facingRight = false;
-  }
-  if (keys.ArrowRight) {
-    player.x += PLAYER_SPEED;
-    player.facingRight = true;
+  // ── Player 1 movement ──
+  if (gameMode === '1player') {
+    // Arrow keys control player 1 in single-player mode
+    if (keys.ArrowLeft) {
+      player.x -= PLAYER_SPEED;
+      player.facingRight = false;
+    }
+    if (keys.ArrowRight) {
+      player.x += PLAYER_SPEED;
+      player.facingRight = true;
+    }
+  } else {
+    // Z/C keys control player 1 in two-player mode
+    if (keys.z) {
+      player.x -= PLAYER_SPEED;
+      player.facingRight = false;
+    }
+    if (keys.c) {
+      player.x += PLAYER_SPEED;
+      player.facingRight = true;
+    }
   }
 
-  // Keep player on the left-hand side of the court (cannot cross the net)
+  // Keep player 1 on the left-hand side of the court (cannot cross the net)
   const minX = player.facingRight ? PLAYER_SIDE_REACH : PLAYER_FRONT_REACH;
   const maxX = player.facingRight ? GAME_WIDTH / 2 - PLAYER_FRONT_REACH : GAME_WIDTH / 2 - PLAYER_SIDE_REACH;
   if (player.x < minX) player.x = minX;
   if (player.x > maxX) player.x = maxX;
+
+  // ── Player 2 movement (two-player mode only) ──
+  if (gameMode === '2player') {
+    if (keys.ArrowLeft) {
+      player2.x -= PLAYER_SPEED;
+      player2.facingRight = false;
+    }
+    if (keys.ArrowRight) {
+      player2.x += PLAYER_SPEED;
+      player2.facingRight = true;
+    }
+
+    // Keep player 2 on the right-hand side of the court (cannot cross the net)
+    const minX2 = player2.facingRight ? GAME_WIDTH / 2 + PLAYER_SIDE_REACH : GAME_WIDTH / 2 + PLAYER_FRONT_REACH;
+    const maxX2 = player2.facingRight ? GAME_WIDTH - PLAYER_FRONT_REACH : GAME_WIDTH - PLAYER_SIDE_REACH;
+    if (player2.x < minX2) player2.x = minX2;
+    if (player2.x > maxX2) player2.x = maxX2;
+  }
 }
 
 // ── Render ───────────────────────────────────────────────────────────────────
@@ -243,6 +321,9 @@ function render() {
   ctx.clearRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
   drawBackground();
   drawStickFigure(player.x, player.y, player.facingRight);
+  if (gameMode === '2player') {
+    drawStickFigure(player2.x, player2.y, player2.facingRight);
+  }
 }
 
 // ── Game loop ─────────────────────────────────────────────────────────────────
@@ -252,4 +333,5 @@ function gameLoop() {
   requestAnimationFrame(gameLoop);
 }
 
-gameLoop();
+// Draw the initial scene so players are visible before "Start game" is pressed
+render();
