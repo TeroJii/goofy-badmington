@@ -7,14 +7,21 @@
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <div id="wrapper">
-    <h1>Goofy Badminton</h1>
-    <div id="game-container">
-      <canvas id="gameCanvas" width="800" height="600">
-        Your browser does not support the HTML5 canvas element. Please upgrade to a modern browser to play Goofy Badminton.
-      </canvas>
+  <div id="page-layout">
+    <aside id="sidebar">
+      <button id="btn-1player" class="mode-btn active">1 player game</button>
+      <button id="btn-2player" class="mode-btn">2 player game</button>
+      <button id="btn-start">Start game</button>
+    </aside>
+    <div id="wrapper">
+      <h1>Goofy Badminton</h1>
+      <div id="game-container">
+        <canvas id="gameCanvas" width="800" height="600">
+          Your browser does not support the HTML5 canvas element. Please upgrade to a modern browser to play Goofy Badminton.
+        </canvas>
+      </div>
+      <p id="controls-hint">Use ← → arrow keys to move the player</p>
     </div>
-    <p id="controls-hint">Use ← → arrow keys to move the player</p>
   </div>
   <script src="game.js"></script>
 </body>
