@@ -19,6 +19,9 @@ const GAME_HEIGHT = canvas.height; // 600
 // ── Ground ───────────────────────────────────────────────────────────────────
 const GROUND_Y = GAME_HEIGHT - 60;
 
+// ── Timer ─────────────────────────────────────────────────────────────────────
+const TIMER_DURATION = 120; // 2 minutes in seconds
+
 // ── Player settings ──────────────────────────────────────────────────────────
 const PLAYER_SPEED = 4;
 const STICK_COLOR = '#e0e0e0';
@@ -29,16 +32,20 @@ const BAT_HANDLE_LEN = 28;        // pixels from hand to base of bat head
 const BAT_HEAD_RX = 9;            // semi-minor axis (width across head)
 const BAT_HEAD_RY = 14;           // semi-major axis (length along head)
 
+// ── Player starting positions ─────────────────────────────────────────────────
+const PLAYER1_START_X = GAME_WIDTH / 4;
+const PLAYER2_START_X = (GAME_WIDTH * 3) / 4;
+
 const player = {
-  x: GAME_WIDTH / 4,  // start on the left-hand side of the court
-  y: GROUND_Y,        // feet rest on the ground line
+  x: PLAYER1_START_X,  // start on the left-hand side of the court
+  y: GROUND_Y,         // feet rest on the ground line
   facingRight: true,
 };
 
 const player2 = {
-  x: (GAME_WIDTH * 3) / 4,  // start on the right-hand side of the court
-  y: GROUND_Y,               // feet rest on the ground line
-  facingRight: false,        // faces left (mirror of player 1)
+  x: PLAYER2_START_X,  // start on the right-hand side of the court
+  y: GROUND_Y,         // feet rest on the ground line
+  facingRight: false,  // faces left (mirror of player 1)
 };
 
 // Stick-figure proportions (all relative to player.y == feet)
@@ -60,6 +67,9 @@ const PLAYER_FRONT_REACH = FIG.armLen + Math.SQRT1_2 * (BAT_HANDLE_LEN + BAT_HEA
 /** @type {'1player' | '2player'} */
 let gameMode = '1player';
 let gameRunning = false;
+let gameOver = false;
+let timerSeconds = TIMER_DURATION;
+let lastTimestamp = 0;
 
 // ── Input state ──────────────────────────────────────────────────────────────
 const keys = {
@@ -86,11 +96,13 @@ document.addEventListener('keyup', (e) => {
 const btn1Player = document.getElementById('btn-1player');
 const btn2Player = document.getElementById('btn-2player');
 const btnStart   = document.getElementById('btn-start');
+const btnReset   = document.getElementById('btn-reset');
 const controlsHint = document.getElementById('controls-hint');
 
 if (!(btn1Player instanceof HTMLButtonElement) ||
     !(btn2Player instanceof HTMLButtonElement) ||
-    !(btnStart   instanceof HTMLButtonElement)) {
+    !(btnStart   instanceof HTMLButtonElement) ||
+    !(btnReset   instanceof HTMLButtonElement)) {
   throw new Error('Game initialization error: Required button elements not found.');
 }
 
@@ -110,9 +122,26 @@ btn2Player.addEventListener('click', () => {
 
 btnStart.addEventListener('click', () => {
   if (!gameRunning) {
+    timerSeconds = TIMER_DURATION;
+    gameOver = false;
+    lastTimestamp = 0;
     gameRunning = true;
     requestAnimationFrame(gameLoop);
   }
+});
+
+btnReset.addEventListener('click', () => {
+  gameRunning = false;
+  gameOver = false;
+  timerSeconds = TIMER_DURATION;
+  lastTimestamp = 0;
+  player.x = PLAYER1_START_X;
+  player.y = GROUND_Y;
+  player.facingRight = true;
+  player2.x = PLAYER2_START_X;
+  player2.y = GROUND_Y;
+  player2.facingRight = false;
+  render();
 });
 
 // ── Drawing helpers ──────────────────────────────────────────────────────────
@@ -266,6 +295,51 @@ function drawStickFigure(x, y, facingRight) {
   ctx.stroke();
 }
 
+// ── Timer helpers ─────────────────────────────────────────────────────────────
+
+/**
+ * Format a number of seconds as "M:SS".
+ * @param {number} seconds - Total seconds remaining
+ * @returns {string} Formatted time string (e.g. "2:00", "1:05")
+ */
+function formatTime(seconds) {
+  const m = Math.floor(seconds / 60);
+  const s = Math.floor(seconds % 60);
+  return `${m}:${s.toString().padStart(2, '0')}`;
+}
+
+/**
+ * Draw the countdown timer centred at the top of the canvas.
+ */
+function drawTimer() {
+  ctx.save();
+  ctx.font = 'bold 24px Arial, Helvetica, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  ctx.shadowColor = '#000000';
+  ctx.shadowBlur = 4;
+  ctx.fillStyle = '#ffffff';
+  ctx.fillText(formatTime(timerSeconds), GAME_WIDTH / 2, 12);
+  ctx.restore();
+}
+
+/**
+ * Draw a semi-transparent overlay with "GAME OVER" text.
+ */
+function drawGameOver() {
+  ctx.save();
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.55)';
+  ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+  ctx.font = 'bold 72px Arial, Helvetica, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.shadowColor = '#000000';
+  ctx.shadowBlur = 10;
+  ctx.fillStyle = '#ff4444';
+  ctx.fillText('GAME OVER', GAME_WIDTH / 2, GAME_HEIGHT / 2);
+  ctx.restore();
+}
+
 // ── Update ───────────────────────────────────────────────────────────────────
 function update() {
   // ── Player 1 movement ──
@@ -324,10 +398,33 @@ function render() {
   if (gameMode === '2player') {
     drawStickFigure(player2.x, player2.y, player2.facingRight);
   }
+  if (!gameOver) {
+    drawTimer();
+  } else {
+    drawGameOver();
+  }
 }
 
 // ── Game loop ─────────────────────────────────────────────────────────────────
-function gameLoop() {
+/**
+ * @param {DOMHighResTimeStamp} timestamp - Provided by requestAnimationFrame
+ */
+function gameLoop(timestamp) {
+  if (!gameRunning) return;
+
+  if (lastTimestamp === 0) lastTimestamp = timestamp;
+  const delta = (timestamp - lastTimestamp) / 1000; // seconds elapsed this frame
+  lastTimestamp = timestamp;
+
+  timerSeconds -= delta;
+  if (timerSeconds <= 0) {
+    timerSeconds = 0;
+    gameRunning = false;
+    gameOver = true;
+    render();
+    return;
+  }
+
   update();
   render();
   requestAnimationFrame(gameLoop);

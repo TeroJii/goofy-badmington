@@ -95,3 +95,19 @@ h1 {
   background-color: #2a8e2a;
   border-color: #4abe4a;
 }
+
+#btn-reset {
+  background-color: #6e1a1a;
+  color: #e0e0e0;
+  border: 2px solid #9e2a2a;
+  border-radius: 4px;
+  padding: 10px 16px;
+  font-size: 0.95rem;
+  cursor: pointer;
+  transition: background-color 0.2s, border-color 0.2s;
+}
+
+#btn-reset:hover {
+  background-color: #8e2a2a;
+  border-color: #be4a4a;
+}
