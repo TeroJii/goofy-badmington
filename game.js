@@ -31,6 +31,12 @@ const BAT_COLOR = '#c8a26a';      // warm wood / frame colour
 const BAT_HANDLE_LEN = 28;        // pixels from hand to base of bat head
 const BAT_HEAD_RX = 9;            // semi-minor axis (width across head)
 const BAT_HEAD_RY = 14;           // semi-major axis (length along head)
+const BAT_REST_ANGLE = 45;        // resting bat angle in degrees (from upward y-axis, toward front)
+const BAT_SWING_START = -90;      // swing start angle: behind the player's head
+const BAT_SWING_DEGREES_PER_FRAME = PLAYER_SPEED * 3; // angular advance per frame during a swing (degrees)
+
+// ── Math helpers ──────────────────────────────────────────────────────────────
+const DEG_TO_RAD = Math.PI / 180;
 
 // ── Player starting positions ─────────────────────────────────────────────────
 const PLAYER1_START_X = GAME_WIDTH / 4;
@@ -40,12 +46,16 @@ const player = {
   x: PLAYER1_START_X,  // start on the left-hand side of the court
   y: GROUND_Y,         // feet rest on the ground line
   facingRight: true,
+  batAngle: BAT_REST_ANGLE, // current bat angle in degrees
+  isSwinging: false,        // true while a swing is in progress
 };
 
 const player2 = {
   x: PLAYER2_START_X,  // start on the right-hand side of the court
   y: GROUND_Y,         // feet rest on the ground line
   facingRight: false,  // faces left (mirror of player 1)
+  batAngle: BAT_REST_ANGLE,
+  isSwinging: false,
 };
 
 // Stick-figure proportions (all relative to player.y == feet)
@@ -75,6 +85,8 @@ let lastTimestamp = 0;
 const keys = {
   ArrowLeft: false,
   ArrowRight: false,
+  ArrowDown: false,
+  x: false,
   z: false,
   c: false,
 };
@@ -110,14 +122,14 @@ btn1Player.addEventListener('click', () => {
   gameMode = '1player';
   btn1Player.classList.add('active');
   btn2Player.classList.remove('active');
-  if (controlsHint) controlsHint.textContent = 'Use ← → arrow keys to move the player';
+  if (controlsHint) controlsHint.textContent = 'Use ← → to move, ↓ to swing';
 });
 
 btn2Player.addEventListener('click', () => {
   gameMode = '2player';
   btn2Player.classList.add('active');
   btn1Player.classList.remove('active');
-  if (controlsHint) controlsHint.textContent = 'Player 1: Z / C keys  |  Player 2: ← → arrow keys';
+  if (controlsHint) controlsHint.textContent = 'Player 1: Z / C to move, X to swing  |  Player 2: ← → to move, ↓ to swing';
 });
 
 btnStart.addEventListener('click', () => {
@@ -138,9 +150,13 @@ btnReset.addEventListener('click', () => {
   player.x = PLAYER1_START_X;
   player.y = GROUND_Y;
   player.facingRight = true;
+  player.batAngle = BAT_REST_ANGLE;
+  player.isSwinging = false;
   player2.x = PLAYER2_START_X;
   player2.y = GROUND_Y;
   player2.facingRight = false;
+  player2.batAngle = BAT_REST_ANGLE;
+  player2.isSwinging = false;
   render();
 });
 
@@ -190,20 +206,22 @@ function drawBackground() {
 }
 
 /**
- * Draw a static badminton bat held at a 45-degree angle.
- * The grip of the bat starts at (handX, handY) and the head extends
- * forward and upward at 45 degrees in the direction the player faces.
+ * Draw a badminton bat held at the given angle.
+ * The grip of the bat starts at (handX, handY) and the head extends in the
+ * direction determined by batAngle (degrees from the upward y-axis, positive
+ * values tilt toward the front of the player).
  * @param {number} handX - x position of the hand (front arm tip)
  * @param {number} handY - y position of the hand
  * @param {boolean} facingRight - direction the player faces
+ * @param {number} batAngle - bat angle in degrees from the upward y-axis
  */
-function drawBat(handX, handY, facingRight) {
+function drawBat(handX, handY, facingRight, batAngle) {
   const dir = facingRight ? 1 : -1;
-  const cos45 = Math.SQRT1_2; // cos(45°) = sin(45°) = 1/√2 ≈ 0.707
+  const angleRad = batAngle * DEG_TO_RAD;
 
-  // Bat direction vector in canvas coords: forward (dir) and upward (-y) at 45 °
-  const bdx = dir * cos45;
-  const bdy = -cos45;
+  // Bat direction vector: forward component (dir * sin) and upward component (-cos)
+  const bdx = dir * Math.sin(angleRad);
+  const bdy = -Math.cos(angleRad);
 
   // End of handle (start of bat head)
   const tipX = handX + bdx * BAT_HANDLE_LEN;
@@ -213,11 +231,10 @@ function drawBat(handX, handY, facingRight) {
   const headCX = handX + bdx * (BAT_HANDLE_LEN + BAT_HEAD_RY);
   const headCY = handY + bdy * (BAT_HANDLE_LEN + BAT_HEAD_RY);
 
-  // Ellipse rotation: long axis (ry) must align with the bat direction.
-  // ctx.ellipse rotation r makes the ry axis point at direction (-sin r, cos r)
-  // in canvas coords. For facing right we need (-sin r, cos r) = (cos45, -cos45),
-  // which gives r = π/4. Mirror to -π/4 when facing left.
-  const headRot = dir * Math.PI / 4;
+  // Ellipse rotation: align the long axis (ry) with the bat direction vector.
+  // In canvas coords, the ry axis direction at rotation r is (-sin r, cos r).
+  // Solving for (bdx, bdy) gives headRot = atan2(bdx, -bdy).
+  const headRot = Math.atan2(bdx, -bdy);
 
   ctx.save();
   ctx.strokeStyle = BAT_COLOR;
@@ -244,8 +261,9 @@ function drawBat(handX, handY, facingRight) {
  * @param {number} x  - x position (feet / hip centre)
  * @param {number} y  - y position (feet on ground)
  * @param {boolean} facingRight - direction the player faces
+ * @param {number} batAngle - current bat angle in degrees (see drawBat)
  */
-function drawStickFigure(x, y, facingRight) {
+function drawStickFigure(x, y, facingRight, batAngle) {
   ctx.strokeStyle = STICK_COLOR;
   ctx.fillStyle = STICK_COLOR;
   ctx.lineWidth = 3;
@@ -285,8 +303,8 @@ function drawStickFigure(x, y, facingRight) {
   ctx.lineTo(x + dir * FIG.armLen, shoulderY - 10);
   ctx.stroke();
 
-  // Bat held in the front hand at 45 degrees
-  drawBat(x + dir * FIG.armLen, shoulderY - 10, facingRight);
+  // Bat held in the front hand at the current swing angle
+  drawBat(x + dir * FIG.armLen, shoulderY - 10, facingRight, batAngle);
 
   // — Head —
   const headCY = shoulderY - FIG.headR;
@@ -371,6 +389,21 @@ function update() {
   if (player.x < minX) player.x = minX;
   if (player.x > maxX) player.x = maxX;
 
+  // ── Player 1 swing ──
+  // In 1-player mode ArrowDown triggers the swing; in 2-player mode the X key is used.
+  const swingKeyP1 = gameMode === '1player' ? keys.ArrowDown : keys.x;
+  if (swingKeyP1 && !player.isSwinging) {
+    player.isSwinging = true;
+    player.batAngle = BAT_SWING_START;
+  }
+  if (player.isSwinging) {
+    player.batAngle += BAT_SWING_DEGREES_PER_FRAME;
+    if (player.batAngle >= BAT_REST_ANGLE) {
+      player.batAngle = BAT_REST_ANGLE;
+      player.isSwinging = false;
+    }
+  }
+
   // ── Player 2 movement (two-player mode only) ──
   if (gameMode === '2player') {
     if (keys.ArrowLeft) {
@@ -387,6 +420,19 @@ function update() {
     const maxX2 = player2.facingRight ? GAME_WIDTH - PLAYER_FRONT_REACH : GAME_WIDTH - PLAYER_SIDE_REACH;
     if (player2.x < minX2) player2.x = minX2;
     if (player2.x > maxX2) player2.x = maxX2;
+
+    // ── Player 2 swing ──
+    if (keys.ArrowDown && !player2.isSwinging) {
+      player2.isSwinging = true;
+      player2.batAngle = BAT_SWING_START;
+    }
+    if (player2.isSwinging) {
+      player2.batAngle += BAT_SWING_DEGREES_PER_FRAME;
+      if (player2.batAngle >= BAT_REST_ANGLE) {
+        player2.batAngle = BAT_REST_ANGLE;
+        player2.isSwinging = false;
+      }
+    }
   }
 }
 
@@ -394,9 +440,9 @@ function update() {
 function render() {
   ctx.clearRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
   drawBackground();
-  drawStickFigure(player.x, player.y, player.facingRight);
+  drawStickFigure(player.x, player.y, player.facingRight, player.batAngle);
   if (gameMode === '2player') {
-    drawStickFigure(player2.x, player2.y, player2.facingRight);
+    drawStickFigure(player2.x, player2.y, player2.facingRight, player2.batAngle);
   }
   if (!gameOver) {
     drawTimer();
