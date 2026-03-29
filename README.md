@@ -10,10 +10,24 @@ A browser-based 2D badminton game built with plain HTML, CSS, and JavaScript (HT
 
 ## Controls
 
+### 1 Player game
+
 | Key | Action |
 |-----|--------|
-| ← Arrow | Move player left |
-| → Arrow | Move player right |
+| ← Arrow | Move left |
+| → Arrow | Move right |
+| ↓ Arrow | Swing bat |
+
+### 2 Player game
+
+| Key | Player | Action |
+|-----|--------|--------|
+| Z | Player 1 (left) | Move left |
+| C | Player 1 (left) | Move right |
+| X | Player 1 (left) | Swing bat |
+| ← Arrow | Player 2 (right) | Move left |
+| → Arrow | Player 2 (right) | Move right |
+| ↓ Arrow | Player 2 (right) | Swing bat |
 
 ## Development
 
