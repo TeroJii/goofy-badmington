@@ -38,6 +38,9 @@ const BAT_SWING_DEGREES_PER_FRAME = PLAYER_SPEED * 3; // angular advance per fra
 // ── Math helpers ──────────────────────────────────────────────────────────────
 const DEG_TO_RAD = Math.PI / 180;
 
+// ── Net dimensions (must match the background drawing) ────────────────────────
+const NET_HEIGHT = 80;  // pixels from ground to net top
+
 // ── Player starting positions ─────────────────────────────────────────────────
 const PLAYER1_START_X = GAME_WIDTH / 4;
 const PLAYER2_START_X = (GAME_WIDTH * 3) / 4;
@@ -72,6 +75,36 @@ const PLAYER_SIDE_REACH = Math.max(FIG.armLen, PLAYER_LEG_HALF_WIDTH, FIG.headR)
 const BAT_HEAD_HALF_WIDTH_AT_45 = Math.hypot(BAT_HEAD_RX, BAT_HEAD_RY) * Math.SQRT1_2;
 // Max horizontal reach from the body centre to the frontmost visible bat edge.
 const PLAYER_FRONT_REACH = FIG.armLen + Math.SQRT1_2 * (BAT_HANDLE_LEN + BAT_HEAD_RY) + BAT_HEAD_HALF_WIDTH_AT_45;
+
+// ── Ball settings ─────────────────────────────────────────────────────────────
+// Diameter = 1.5× the head diameter → radius = 1.5× head radius.
+const BALL_RADIUS = Math.round(FIG.headR * 1.5);             // 18 px
+const BALL_SPEED  = PLAYER_SPEED;                            // horiz. speed matches walking
+const BALL_ARC_HEIGHT = GROUND_Y * 0.75;                     // peak rise above ground (¾ of play area)
+// Derive gravity & launch-vy so a standard pitch travels exactly GAME_WIDTH/2 horizontally.
+const _HALF_FLIGHT_FRAMES = (GAME_WIDTH / 2) / BALL_SPEED / 2;  // 50 frames
+const BALL_GRAVITY    = (2 * BALL_ARC_HEIGHT) / (_HALF_FLIGHT_FRAMES * _HALF_FLIGHT_FRAMES);
+const BALL_LAUNCH_VY  = -(BALL_GRAVITY * _HALF_FLIGHT_FRAMES);   // initial upward vy (~−16.2)
+const BALL_WALK_BOOST    = BALL_SPEED * 0.5;  // extra vx when walking toward opponent during a swing
+const BALL_HIT_COOLDOWN  = 15;               // frames before the same player may re-hit the ball
+const BALL_AUTO_SERVE_DELAY = 90;            // frames AI waits before auto-serving in 1-player mode
+
+// ── Ball state ────────────────────────────────────────────────────────────────
+const ball = {
+  x: 0,
+  y: 0,
+  vx: 0,
+  vy: 0,
+  inFlight: false,
+  servingPlayer: 1,  // 1 = player1 serves next, 2 = player2 serves next
+  lastHitBy: 0,      // 1 or 2 — who last struck the ball (used for net-scoring)
+  hitCooldown: 0,    // frames until the same player may hit again
+  autoServeTimer: 0, // countdown to AI auto-serve (1-player mode only)
+};
+
+// ── Scores ────────────────────────────────────────────────────────────────────
+let score1 = 0;
+let score2 = 0;
 
 // ── Game mode & state ─────────────────────────────────────────────────────────
 /** @type {'1player' | '2player'} */
@@ -137,6 +170,19 @@ btnStart.addEventListener('click', () => {
     timerSeconds = TIMER_DURATION;
     gameOver = false;
     lastTimestamp = 0;
+    score1 = 0;
+    score2 = 0;
+    player.x = PLAYER1_START_X;
+    player.y = GROUND_Y;
+    player.facingRight = true;
+    player.batAngle = BAT_REST_ANGLE;
+    player.isSwinging = false;
+    player2.x = PLAYER2_START_X;
+    player2.y = GROUND_Y;
+    player2.facingRight = false;
+    player2.batAngle = BAT_REST_ANGLE;
+    player2.isSwinging = false;
+    resetBall(1);
     gameRunning = true;
     requestAnimationFrame(gameLoop);
   }
@@ -147,6 +193,8 @@ btnReset.addEventListener('click', () => {
   gameOver = false;
   timerSeconds = TIMER_DURATION;
   lastTimestamp = 0;
+  score1 = 0;
+  score2 = 0;
   player.x = PLAYER1_START_X;
   player.y = GROUND_Y;
   player.facingRight = true;
@@ -157,6 +205,7 @@ btnReset.addEventListener('click', () => {
   player2.facingRight = false;
   player2.batAngle = BAT_REST_ANGLE;
   player2.isSwinging = false;
+  resetBall(1);
   render();
 });
 
@@ -315,6 +364,319 @@ function drawStickFigure(x, y, facingRight, batAngle) {
 
 // ── Timer helpers ─────────────────────────────────────────────────────────────
 
+// ── Ball helpers ──────────────────────────────────────────────────────────────
+
+/**
+ * Return the position at which the ball hovers while waiting to be served.
+ * The ball floats in front of the serving player's forehead.
+ * @param {number} who - 1 = player 1, 2 = player 2
+ * @returns {{ x: number, y: number }}
+ */
+function getBallWaitPosition(who) {
+  const p = who === 1 ? player : player2;
+  const dir = p.facingRight ? 1 : -1;
+  const headCY = p.y - FIG.legLen - FIG.bodyLen - FIG.headR;
+  return {
+    x: p.x + dir * (FIG.headR + BALL_RADIUS),
+    y: headCY,
+  };
+}
+
+/**
+ * Compute the centre of the bat-head ellipse for a given player's current state.
+ * @param {{ x: number, y: number, facingRight: boolean, batAngle: number }} p
+ * @returns {{ x: number, y: number }}
+ */
+function getBatHeadCenter(p) {
+  const dir = p.facingRight ? 1 : -1;
+  const angleRad = p.batAngle * DEG_TO_RAD;
+  const bdx = dir * Math.sin(angleRad);
+  const bdy = -Math.cos(angleRad);
+  const shoulderY = p.y - FIG.legLen - FIG.bodyLen;
+  const handX = p.x + dir * FIG.armLen;
+  const handY = shoulderY - 10;
+  return {
+    x: handX + bdx * (BAT_HANDLE_LEN + BAT_HEAD_RY),
+    y: handY + bdy * (BAT_HANDLE_LEN + BAT_HEAD_RY),
+  };
+}
+
+/**
+ * Returns true if the given player is walking toward the opponent
+ * (i.e., toward the net), which boosts the ball's launch speed.
+ * @param {number} playerNum - 1 or 2
+ * @returns {boolean}
+ */
+function isMovingTowardOpponent(playerNum) {
+  if (playerNum === 1) {
+    return gameMode === '1player' ? keys.ArrowRight : keys.c;
+  }
+  return keys.ArrowLeft; // Player 2 moves left to approach player 1
+}
+
+/**
+ * Launch the ball from the serving player's position.
+ * @param {number} who - 1 or 2
+ */
+function launchBall(who) {
+  const dir = who === 1 ? 1 : -1;  // P1 hits right; P2 hits left
+  let vx = dir * BALL_SPEED;
+  if (isMovingTowardOpponent(who)) vx += dir * BALL_WALK_BOOST;
+  ball.vx = vx;
+  ball.vy = BALL_LAUNCH_VY;
+  ball.inFlight = true;
+  ball.lastHitBy = who;
+  ball.hitCooldown = BALL_HIT_COOLDOWN;
+}
+
+/**
+ * Reset (or initialise) the ball to the serving position of the given player.
+ * @param {number} who - 1 or 2
+ */
+function resetBall(who) {
+  ball.servingPlayer = who;
+  ball.inFlight = false;
+  ball.vx = 0;
+  ball.vy = 0;
+  ball.hitCooldown = 0;
+  ball.lastHitBy = 0;
+  // In 1-player mode player 2 auto-serves after a short delay.
+  ball.autoServeTimer = (who === 2 && gameMode === '1player') ? BALL_AUTO_SERVE_DELAY : 0;
+  const pos = getBallWaitPosition(who);
+  ball.x = pos.x;
+  ball.y = pos.y;
+}
+
+/**
+ * Award a point to the scoring player and reset the ball for the next serve.
+ * @param {number} scorer - 1 or 2 (the player who won the point)
+ */
+function awardPoint(scorer) {
+  if (scorer === 1) {
+    score1++;
+  } else {
+    score2++;
+  }
+  // The player who was scored *against* (the loser of this rally) serves next.
+  const loser = scorer === 1 ? 2 : 1;
+  resetBall(loser);
+}
+
+/**
+ * Check whether the ball collides with a player's bat; apply appropriate
+ * velocity change (powered return if swinging, drop otherwise).
+ * @param {{ x:number, y:number, facingRight:boolean, batAngle:number, isSwinging:boolean }} p
+ * @param {number} playerNum - 1 or 2
+ * @returns {boolean} true if a collision was handled
+ */
+function checkBatCollision(p, playerNum) {
+  // Prevent the same player from immediately re-hitting the ball.
+  if (ball.hitCooldown > 0 && ball.lastHitBy === playerNum) return false;
+
+  const batHead = getBatHeadCenter(p);
+  const dist = Math.hypot(ball.x - batHead.x, ball.y - batHead.y);
+  if (dist > BALL_RADIUS + BAT_HEAD_RY) return false;
+
+  if (p.isSwinging) {
+    // Powered return — mirror the horizontal direction.
+    const dir = playerNum === 1 ? 1 : -1;
+    let vx = dir * BALL_SPEED;
+    if (isMovingTowardOpponent(playerNum)) vx += dir * BALL_WALK_BOOST;
+    ball.vx = vx;
+    ball.vy = BALL_LAUNCH_VY;
+  } else {
+    // Bat in the way but player not swinging — ball drops straight down.
+    ball.vx = 0;
+    ball.vy = Math.abs(ball.vy) + 1; // ensure downward motion
+  }
+  ball.lastHitBy = playerNum;
+  ball.hitCooldown = BALL_HIT_COOLDOWN;
+  return true;
+}
+
+/**
+ * Update ball position, physics, and all collision/scoring logic each frame.
+ */
+function updateBall() {
+  if (!ball.inFlight) {
+    // ── Waiting / serving state ──
+    if (ball.autoServeTimer > 0) {
+      ball.autoServeTimer--;
+      if (ball.autoServeTimer === 0) {
+        launchBall(ball.servingPlayer);
+        return;
+      }
+    }
+    // Ball follows the serving player's forehead position.
+    const pos = getBallWaitPosition(ball.servingPlayer);
+    ball.x = pos.x;
+    ball.y = pos.y;
+
+    // Launch when the serving player initiates a swing.
+    const servingP = ball.servingPlayer === 1 ? player : player2;
+    if (servingP.isSwinging) {
+      launchBall(ball.servingPlayer);
+    }
+    return;
+  }
+
+  // ── In-flight physics ──
+  if (ball.hitCooldown > 0) ball.hitCooldown--;
+
+  ball.vy += BALL_GRAVITY;
+  ball.x  += ball.vx;
+  ball.y  += ball.vy;
+
+  // ── Wall & ceiling bounces ──
+  if (ball.x - BALL_RADIUS < 0) {
+    ball.x  = BALL_RADIUS;
+    ball.vx = Math.abs(ball.vx);
+  } else if (ball.x + BALL_RADIUS > GAME_WIDTH) {
+    ball.x  = GAME_WIDTH - BALL_RADIUS;
+    ball.vx = -Math.abs(ball.vx);
+  }
+  if (ball.y - BALL_RADIUS < 0) {
+    ball.y  = BALL_RADIUS;
+    ball.vy = Math.abs(ball.vy);
+  }
+
+  // ── Net collision ──
+  const netX    = GAME_WIDTH / 2;
+  const netTopY = GROUND_Y - NET_HEIGHT;
+  if (Math.abs(ball.x - netX) < BALL_RADIUS && ball.y + BALL_RADIUS >= netTopY) {
+    // Whoever hit it last sent it into the net — the other player scores.
+    awardPoint(ball.lastHitBy === 1 ? 2 : 1);
+    return;
+  }
+
+  // ── Ground landing ──
+  if (ball.y + BALL_RADIUS >= GROUND_Y) {
+    // Left half → player 2 scores; right half → player 1 scores.
+    awardPoint(ball.x < GAME_WIDTH / 2 ? 2 : 1);
+    return;
+  }
+
+  // ── Bat collision checks ──
+  if (checkBatCollision(player, 1)) return;
+  checkBatCollision(player2, 2);
+}
+
+/**
+ * Simple AI that moves player 2 and swings the bat in 1-player mode.
+ */
+function updateAI() {
+  if (gameMode !== '1player') return;
+
+  // Advance any ongoing swing.
+  if (player2.isSwinging) {
+    player2.batAngle += BAT_SWING_DEGREES_PER_FRAME;
+    if (player2.batAngle >= BAT_REST_ANGLE) {
+      player2.batAngle = BAT_REST_ANGLE;
+      player2.isSwinging = false;
+    }
+  }
+
+  if (!ball.inFlight || ball.x <= GAME_WIDTH / 2) {
+    // Ball not on AI's side — drift back to the default starting position.
+    if (Math.abs(player2.x - PLAYER2_START_X) > PLAYER_SPEED) {
+      player2.x += player2.x < PLAYER2_START_X ? PLAYER_SPEED : -PLAYER_SPEED;
+    }
+    player2.facingRight = false;
+    return;
+  }
+
+  // Move toward the ball's current x position.
+  if (Math.abs(player2.x - ball.x) > PLAYER_SPEED) {
+    if (player2.x < ball.x) {
+      player2.x += PLAYER_SPEED;
+      player2.facingRight = true;
+    } else {
+      player2.x -= PLAYER_SPEED;
+      player2.facingRight = false;
+    }
+  }
+
+  // Enforce right-side boundary.
+  const minX2 = player2.facingRight
+    ? GAME_WIDTH / 2 + PLAYER_SIDE_REACH
+    : GAME_WIDTH / 2 + PLAYER_FRONT_REACH;
+  const maxX2 = player2.facingRight
+    ? GAME_WIDTH - PLAYER_FRONT_REACH
+    : GAME_WIDTH - PLAYER_SIDE_REACH;
+  if (player2.x < minX2) player2.x = minX2;
+  if (player2.x > maxX2) player2.x = maxX2;
+
+  // Swing when the bat head could reach the ball.
+  if (!player2.isSwinging) {
+    const batHead = getBatHeadCenter(player2);
+    const dist = Math.hypot(ball.x - batHead.x, ball.y - batHead.y);
+    if (dist <= BALL_RADIUS + BAT_HEAD_RY * 3.5) {
+      player2.isSwinging = true;
+      player2.batAngle   = BAT_SWING_START;
+    }
+  }
+}
+
+// ── Ball drawing ──────────────────────────────────────────────────────────────
+
+/**
+ * Draw the beach ball as a striped circle at its current position.
+ */
+function drawBall() {
+  const { x, y } = ball;
+  const r = BALL_RADIUS;
+  const stripeCount = 6;
+
+  ctx.save();
+  // Clip to the ball circle so wedges don't bleed outside.
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.clip();
+
+  // Alternating coloured wedges (beach-ball stripes).
+  for (let i = 0; i < stripeCount; i++) {
+    ctx.fillStyle = i % 2 === 0 ? '#ff6b6b' : '#fffbe6';
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.arc(x, y, r, (i / stripeCount) * Math.PI * 2, ((i + 1) / stripeCount) * Math.PI * 2);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  ctx.restore();
+
+  // Outline.
+  ctx.save();
+  ctx.strokeStyle = 'rgba(0,0,0,0.35)';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
+}
+
+/**
+ * Draw the scoreboard — P1 score on the left, P2 score on the right.
+ */
+function drawScoreboard() {
+  ctx.save();
+  ctx.font = 'bold 20px Arial, Helvetica, sans-serif';
+  ctx.textBaseline = 'top';
+  ctx.shadowColor = '#000000';
+  ctx.shadowBlur = 4;
+  ctx.fillStyle = '#ffffff';
+
+  ctx.textAlign = 'left';
+  ctx.fillText(`P1: ${score1}`, 12, 12);
+
+  ctx.textAlign = 'right';
+  ctx.fillText(`P2: ${score2}`, GAME_WIDTH - 12, 12);
+
+  ctx.restore();
+}
+
+// ── Timer helpers ─────────────────────────────────────────────────────────────
+
 /**
  * Format a number of seconds as "M:SS".
  * @param {number} seconds - Total seconds remaining
@@ -342,19 +704,35 @@ function drawTimer() {
 }
 
 /**
- * Draw a semi-transparent overlay with "GAME OVER" text.
+ * Draw a semi-transparent overlay with "GAME OVER" and the winner announcement.
  */
 function drawGameOver() {
   ctx.save();
   ctx.fillStyle = 'rgba(0, 0, 0, 0.55)';
   ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
-  ctx.font = 'bold 72px Arial, Helvetica, sans-serif';
   ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
   ctx.shadowColor = '#000000';
   ctx.shadowBlur = 10;
+
+  // "GAME OVER" heading.
+  ctx.font = 'bold 72px Arial, Helvetica, sans-serif';
+  ctx.textBaseline = 'middle';
   ctx.fillStyle = '#ff4444';
-  ctx.fillText('GAME OVER', GAME_WIDTH / 2, GAME_HEIGHT / 2);
+  ctx.fillText('GAME OVER', GAME_WIDTH / 2, GAME_HEIGHT / 2 - 48);
+
+  // Winner / tie announcement.
+  let resultText;
+  if (score1 > score2) {
+    resultText = 'Player 1 wins!';
+  } else if (score2 > score1) {
+    resultText = 'Player 2 wins!';
+  } else {
+    resultText = "It's a tie!";
+  }
+  ctx.font = 'bold 36px Arial, Helvetica, sans-serif';
+  ctx.fillStyle = '#ffffff';
+  ctx.fillText(resultText, GAME_WIDTH / 2, GAME_HEIGHT / 2 + 36);
+
   ctx.restore();
 }
 
@@ -434,6 +812,9 @@ function update() {
       }
     }
   }
+
+  updateAI();
+  updateBall();
 }
 
 // ── Render ───────────────────────────────────────────────────────────────────
@@ -441,11 +822,12 @@ function render() {
   ctx.clearRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
   drawBackground();
   drawStickFigure(player.x, player.y, player.facingRight, player.batAngle);
-  if (gameMode === '2player') {
-    drawStickFigure(player2.x, player2.y, player2.facingRight, player2.batAngle);
-  }
+  // Player 2 is always drawn — a human opponent in 2-player mode, AI in 1-player mode.
+  drawStickFigure(player2.x, player2.y, player2.facingRight, player2.batAngle);
+  drawBall();
   if (!gameOver) {
     drawTimer();
+    drawScoreboard();
   } else {
     drawGameOver();
   }
@@ -476,5 +858,6 @@ function gameLoop(timestamp) {
   requestAnimationFrame(gameLoop);
 }
 
-// Draw the initial scene so players are visible before "Start game" is pressed
+// Initialise ball and draw the opening scene (players + ball visible before Start is pressed).
+resetBall(1);
 render();
