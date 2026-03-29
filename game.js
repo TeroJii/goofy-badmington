@@ -362,8 +362,6 @@ function drawStickFigure(x, y, facingRight, batAngle) {
   ctx.stroke();
 }
 
-// ── Timer helpers ─────────────────────────────────────────────────────────────
-
 // ── Ball helpers ──────────────────────────────────────────────────────────────
 
 /**
