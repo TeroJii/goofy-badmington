@@ -22,9 +22,17 @@ const GROUND_Y = GAME_HEIGHT - 60;
 // ── Timer ─────────────────────────────────────────────────────────────────────
 const TIMER_DURATION = 120; // 2 minutes in seconds
 
+// ── Net dimensions (must match the background drawing) ───────────────────────
+const NET_HEIGHT = 80;  // pixels from ground to net top
+
 // ── Player settings ──────────────────────────────────────────────────────────
 const PLAYER_SPEED = 4;
 const STICK_COLOR = '#e0e0e0';
+
+// ── Jump settings ─────────────────────────────────────────────────────────────
+const PLAYER_JUMP_HEIGHT = NET_HEIGHT / 2;  // peak rise above ground (px) — half the net height
+const PLAYER_GRAVITY = 0.5;                 // downward acceleration (px/frame²)
+const PLAYER_JUMP_VY = -Math.sqrt(2 * PLAYER_GRAVITY * PLAYER_JUMP_HEIGHT); // initial upward velocity
 
 // ── Bat settings ─────────────────────────────────────────────────────────────
 const BAT_COLOR = '#c8a26a';      // warm wood / frame colour
@@ -38,9 +46,6 @@ const BAT_SWING_DEGREES_PER_FRAME = PLAYER_SPEED * 3; // angular advance per fra
 // ── Math helpers ──────────────────────────────────────────────────────────────
 const DEG_TO_RAD = Math.PI / 180;
 
-// ── Net dimensions (must match the background drawing) ────────────────────────
-const NET_HEIGHT = 80;  // pixels from ground to net top
-
 // ── Player starting positions ─────────────────────────────────────────────────
 const PLAYER1_START_X = GAME_WIDTH / 4;
 const PLAYER2_START_X = (GAME_WIDTH * 3) / 4;
@@ -51,6 +56,8 @@ const player = {
   facingRight: true,
   batAngle: BAT_REST_ANGLE, // current bat angle in degrees
   isSwinging: false,        // true while a swing is in progress
+  vy: 0,                    // vertical velocity (px/frame); negative = upward
+  isJumping: false,         // true while airborne
 };
 
 const player2 = {
@@ -59,6 +66,8 @@ const player2 = {
   facingRight: false,  // faces left (mirror of player 1)
   batAngle: BAT_REST_ANGLE,
   isSwinging: false,
+  vy: 0,
+  isJumping: false,
 };
 
 // Stick-figure proportions (all relative to player.y == feet)
@@ -118,10 +127,12 @@ let lastTimestamp = 0;
 const keys = {
   ArrowLeft: false,
   ArrowRight: false,
+  ArrowUp: false,
   ArrowDown: false,
   x: false,
   z: false,
   c: false,
+  s: false,
 };
 
 document.addEventListener('keydown', (e) => {
@@ -155,14 +166,14 @@ btn1Player.addEventListener('click', () => {
   gameMode = '1player';
   btn1Player.classList.add('active');
   btn2Player.classList.remove('active');
-  if (controlsHint) controlsHint.textContent = 'Use ← → to move, ↓ to swing';
+  if (controlsHint) controlsHint.textContent = 'Use ← → to move, ↑ to jump, ↓ to swing';
 });
 
 btn2Player.addEventListener('click', () => {
   gameMode = '2player';
   btn2Player.classList.add('active');
   btn1Player.classList.remove('active');
-  if (controlsHint) controlsHint.textContent = 'Player 1: Z / C to move, X to swing  |  Player 2: ← → to move, ↓ to swing';
+  if (controlsHint) controlsHint.textContent = 'Player 1: Z / C to move, S to jump, X to swing  |  Player 2: ← → to move, ↑ to jump, ↓ to swing';
 });
 
 btnStart.addEventListener('click', () => {
@@ -177,11 +188,15 @@ btnStart.addEventListener('click', () => {
     player.facingRight = true;
     player.batAngle = BAT_REST_ANGLE;
     player.isSwinging = false;
+    player.vy = 0;
+    player.isJumping = false;
     player2.x = PLAYER2_START_X;
     player2.y = GROUND_Y;
     player2.facingRight = false;
     player2.batAngle = BAT_REST_ANGLE;
     player2.isSwinging = false;
+    player2.vy = 0;
+    player2.isJumping = false;
     resetBall(1);
     gameRunning = true;
     requestAnimationFrame(gameLoop);
@@ -200,11 +215,15 @@ btnReset.addEventListener('click', () => {
   player.facingRight = true;
   player.batAngle = BAT_REST_ANGLE;
   player.isSwinging = false;
+  player.vy = 0;
+  player.isJumping = false;
   player2.x = PLAYER2_START_X;
   player2.y = GROUND_Y;
   player2.facingRight = false;
   player2.batAngle = BAT_REST_ANGLE;
   player2.isSwinging = false;
+  player2.vy = 0;
+  player2.isJumping = false;
   resetBall(1);
   render();
 });
@@ -735,6 +754,23 @@ function drawGameOver() {
 }
 
 // ── Update ───────────────────────────────────────────────────────────────────
+
+/**
+ * Apply gravity and ground-landing physics to a player each frame.
+ * @param {{ y: number, vy: number, isJumping: boolean }} p
+ */
+function applyPlayerGravity(p) {
+  if (p.isJumping) {
+    p.vy += PLAYER_GRAVITY;
+    p.y  += p.vy;
+    if (p.y >= GROUND_Y) {
+      p.y = GROUND_Y;
+      p.vy = 0;
+      p.isJumping = false;
+    }
+  }
+}
+
 function update() {
   // ── Player 1 movement ──
   if (gameMode === '1player') {
@@ -764,6 +800,15 @@ function update() {
   const maxX = player.facingRight ? GAME_WIDTH / 2 - PLAYER_FRONT_REACH : GAME_WIDTH / 2 - PLAYER_SIDE_REACH;
   if (player.x < minX) player.x = minX;
   if (player.x > maxX) player.x = maxX;
+
+  // ── Player 1 jump ──
+  // In 1-player mode ArrowUp triggers the jump; in 2-player mode the S key is used.
+  const jumpKeyP1 = gameMode === '1player' ? keys.ArrowUp : keys.s;
+  if (jumpKeyP1 && !player.isJumping) {
+    player.isJumping = true;
+    player.vy = PLAYER_JUMP_VY;
+  }
+  applyPlayerGravity(player);
 
   // ── Player 1 swing ──
   // In 1-player mode ArrowDown triggers the swing; in 2-player mode the X key is used.
@@ -796,6 +841,13 @@ function update() {
     const maxX2 = player2.facingRight ? GAME_WIDTH - PLAYER_FRONT_REACH : GAME_WIDTH - PLAYER_SIDE_REACH;
     if (player2.x < minX2) player2.x = minX2;
     if (player2.x > maxX2) player2.x = maxX2;
+
+    // ── Player 2 jump ──
+    if (keys.ArrowUp && !player2.isJumping) {
+      player2.isJumping = true;
+      player2.vy = PLAYER_JUMP_VY;
+    }
+    applyPlayerGravity(player2);
 
     // ── Player 2 swing ──
     if (keys.ArrowDown && !player2.isSwinging) {
