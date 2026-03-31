@@ -22,6 +22,9 @@ const GROUND_Y = GAME_HEIGHT - 60;
 // ── Timer ─────────────────────────────────────────────────────────────────────
 const TIMER_DURATION = 120; // 2 minutes in seconds
 
+// ── Net dimensions (must match the background drawing) ───────────────────────
+const NET_HEIGHT = 80;  // pixels from ground to net top
+
 // ── Player settings ──────────────────────────────────────────────────────────
 const PLAYER_SPEED = 4;
 const STICK_COLOR = '#e0e0e0';
@@ -42,9 +45,6 @@ const BAT_SWING_DEGREES_PER_FRAME = PLAYER_SPEED * 3; // angular advance per fra
 
 // ── Math helpers ──────────────────────────────────────────────────────────────
 const DEG_TO_RAD = Math.PI / 180;
-
-// ── Net dimensions (must match the background drawing) ────────────────────────
-const NET_HEIGHT = 80;  // pixels from ground to net top
 
 // ── Player starting positions ─────────────────────────────────────────────────
 const PLAYER1_START_X = GAME_WIDTH / 4;
